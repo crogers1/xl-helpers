@@ -1,0 +1,120 @@
+--------------------------------------------
+Notes: 2/1/2016
+--------------------------------------------
+
+The problem on bare metal Jessie was that it was xl was defaulting to 32b qemu
+when the host was 64b. This was hack fixed by making 32b a link to 64b but a
+better fix is to use the conf file and qemu override param.
+
+OpenXT qemu does not support vhds directly. We had to setup a tabdev using
+tap-ctl: tap-ctl create -a "vhd:<path to vhd>" which created a
+/dev/xen/blktap-2/tapdev0
+
+The uivm and ndvm must be killed to use xl.
+
+
+--------------------------------------------
+Notes: over allocation issue:
+--------------------------------------------
+
+libxl__build_hvm
+  xc_hvm_build
+    setup_guest
+      xc_domain_populate_physmap[_exact]
+
+xen-all:xen_ram_init
+  memory:memory_region_init_ram
+    exec:qemu_ram_alloc[_from_ptr]
+      xen-all:xen_ram_alloc
+        xc_domain_populate_physmap_exact
+
+patches/0030-xenfv-i440fx-max-ram-below-4g.patch
+
+BIG NOTE: Had to add videoram=16 in the config
+
+See the memory layout page:
+https://openxt.atlassian.net/wiki/display/~rphilipson/VM+Memory+Layout
+
+--------------------------------------------
+Notes: Dom0 USB NICs
+--------------------------------------------
+
+opkg install ...
+kernel-module-libphy_3.18.24-r2_xenclient_dom0.ipk
+kernel-module-mii_3.18.24-r2_xenclient_dom0.ipk
+kernel-module-usbnet_3.18.24-r2_xenclient_dom0.ipk
+kernel-module-asix_3.18.24-r2_xenclient_dom0.ipk
+udhcpc
+
+
+--------------------------------------------
+Notes: Installing and using libxl
+--------------------------------------------
+
+General note, backup anything that will be changed as you go.
+
+Need to have serial terminal to get things done.
+
+Disable SELinux and XSM.
+
+Re-enable grub editing:
+set edit_and_shell=1
+set timeout=5
+
+Reboot
+
+Get asix packages before losing network.
+
+Move ndvm and uivm vhds so they can't start.
+
+Reboot, move wire
+
+Install asix stuff and get network in dom0, see above.
+
+Need to rebuild QEMU without fprintf redirect rubbish in logging.h
+Copy over.
+
+In recipes-extended/xen/xen-tools.bb add at the bottom of compile and install:
+        oe_runmake -C tools subdir-all-libaio
+        oe_runmake -C tools subdir-all-blktap2
+        oe_runmake -C tools subdir-all-libxl
+
+        oe_runmake -C tools subdir-install-libaio
+        oe_runmake -C tools subdir-install-blktap2
+        oe_runmake -C tools subdir-install-libxl
+
+Rebuild xen-tools.
+
+When I did a makeclean I had to use devshell and a ./configure to make it work.
+Better to use cleansstate
+
+Tarred up image dir and overwrote all the relevant binaries and created symlinks.
+Note new ver: ln -fs libblktapctl.so.1.0.0 libblktapctl.so.1.0
+Reboot
+
+Get all the goodies from lmo:/media/Goodies/xlwork in a work dir.
+
+Use the /usr/lib/xen/bin/qemu-system-i386 wrapper that gets the args right.
+chmod a+x on wrapper.
+Use the xl configs we have made.
+
+Create a log dir /var/log/xen
+Create a lib dir /var/lib/xen
+
+For now we have to be rw
+Need to retap a tapdev0
+Create a /tmp/domid file with 1 in it to start
+
+gdb and lsof
+
+--------------------------------------------
+QEMU network
+--------------------------------------------
+
+Had to setup bridging in dom0 using a static IP. Removed all entries from
+/etc/network/interfaces except lo.
+
+Bridge script here...
+
+Used this to get the rest working: http://toast.djw.org.uk/qemu.html
+
